@@ -1,3 +1,6 @@
++14
+-1
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from models import Usuario
@@ -5,10 +8,6 @@ from dependencies import get_db, bcrypt_context
 from schemas import UsuarioSchema, LoginSchema
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
-
-def criar_token(email):
-    token = f"sioadoansdonas(email)"
-    return token
 
 # 🧭 Rota simples para testar se o módulo está acessível
 @auth_router.get("/")
@@ -44,13 +43,15 @@ async def criar_conta(usuario_schema: UsuarioSchema, db: Session = Depends(get_d
         "usuario": novo_usuario.email
     }
 
+
 @auth_router.post("/login")
-async def login(login_schema : LoginSchema, session: Session = Depends(get_db)):
-    usuario = session.query(Usuario).filter(Usuario.email==login_schema.email).first()
-    if not usuario:
-        raise HTTPException(status_code=400, detail="usuario nao enocontrado")
-    else:
-        acess_token = criar_token(usuario.id)
-        return {"acess_token": acess_token,
-                "token_type": "bearer"
-        }
+async def login(login_schema: LoginSchema, db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(Usuario.email == login_schema.email).first()
+
+    if not usuario or not bcrypt_context.verify(login_schema.senha, usuario.senha):
+        raise HTTPException(status_code=400, detail="Email ou senha incorretos")
+
+    return {
+        "mensagem": "Login realizado com sucesso",
+        "usuario": usuario.email,
+    }

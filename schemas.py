@@ -1,5 +1,8 @@
+from typing import Literal, Optional
+
 from pydantic import BaseModel, EmailStr
-from typing import Optional, Literal
+
+__all__ = ("UsuarioSchema", "LoginSchema", "PedidoSchema")
 
 class UsuarioSchema(BaseModel):
     nome: str
@@ -11,6 +14,19 @@ class UsuarioSchema(BaseModel):
         json_schema_extra = {
             "example": {
                 "nome": "João da Silva",
+                "email": "joao@email.com",
+                "senha": "minhaSenha123"
+            }
+        }
+
+
+class LoginSchema(BaseModel):
+    email: EmailStr
+    senha: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
                 "email": "joao@email.com",
                 "senha": "minhaSenha123"
             }

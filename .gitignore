@@ -1,0 +1,9 @@
++6
+-0
+
+__pycache__/
+*.pyc
+venv/
+meubanco.db
+*.sqlite
+.env
