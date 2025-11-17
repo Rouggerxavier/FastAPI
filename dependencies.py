@@ -1,14 +1,19 @@
 from passlib.context import CryptContext
 from database import SessionLocal
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
+from models import Usuario
+from fastapi import Depends
 
-# 🔐 Contexto de criptografia usando Argon2 (moderno e compatível com Windows)
+
 bcrypt_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-# 🧠 Função de dependência para obter a sessão do banco de dados
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+def verificar_token(token, session : Session = Depends(get_db)):
+    usuario = session.query(Usuario).filter(usuario.id==1).first()
+    return usuario
