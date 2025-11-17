@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy_utils import ChoiceType
 
@@ -8,7 +8,9 @@ STATUS_CHOICES = [
     ("aberto", "Aberto"),
     ("fechado", "Fechado"),
     ("cancelado", "Cancelado"),
+    ("pendente", "Pendente"),
 ]
+STATUS_VALUES = {choice[0] for choice in STATUS_CHOICES}
 
 
 class Usuario(Base):
@@ -23,9 +25,10 @@ class Usuario(Base):
 
 class Pedido(Base):
     __tablename__ = "pedidos"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    preco = Column(Float, nullable=False)
     status = Column(ChoiceType(STATUS_CHOICES), nullable=True)
 
     usuario = relationship("Usuario", back_populates="pedidos")

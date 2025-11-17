@@ -19,3 +19,5 @@ app.include_router(order_router)
 @app.get("/")
 async def root():
     return {"message": "API funcionando!"}
+
+
