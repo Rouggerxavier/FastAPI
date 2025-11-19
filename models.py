@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, Boolean
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy_utils import ChoiceType
 
@@ -20,9 +20,10 @@ class Usuario(Base):
     nome = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
     senha = Column(String, nullable=False)  # 👈 agora tem o campo de senha
+    ativo = Column(Boolean, nullable=False, default=True)
+    admin = Column(Boolean, nullable=False, default=False) 
     pedidos = relationship("Pedido", back_populates="usuario")
-
-
+    
 class Pedido(Base):
     __tablename__ = "pedidos"
 

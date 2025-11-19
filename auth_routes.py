@@ -47,6 +47,8 @@ async def criar_conta(usuario_schema: UsuarioSchema, db: Session = Depends(get_d
     nome = usuario_schema.nome
     email = usuario_schema.email
     senha = usuario_schema.senha
+    admin = usuario_schema.admin
+    ativo = usuario_schema.ativo
 
     usuario_existente = db.query(Usuario).filter(Usuario.email == email).first()
     if usuario_existente:
@@ -54,7 +56,13 @@ async def criar_conta(usuario_schema: UsuarioSchema, db: Session = Depends(get_d
 
     senha_criptografada = bcrypt_context.hash(senha)
 
-    novo_usuario = Usuario(nome=nome, email=email, senha=senha_criptografada)
+    novo_usuario = Usuario(
+        nome=nome,
+        email=email,
+        senha=senha_criptografada,
+        admin=admin,
+        ativo=ativo,
+    )
     db.add(novo_usuario)
     db.commit()
     db.refresh(novo_usuario)
@@ -62,8 +70,9 @@ async def criar_conta(usuario_schema: UsuarioSchema, db: Session = Depends(get_d
     return {
         "mensagem": "Usuário cadastrado com sucesso",
         "usuario": novo_usuario.email,
+        "admin": novo_usuario.admin,
+        "ativo": novo_usuario.ativo,
     }
-
 
 @auth_router.post("/login")
 async def login(login_schema: LoginSchema, db: Session = Depends(get_db)):

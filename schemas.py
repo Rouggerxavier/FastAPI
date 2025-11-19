@@ -1,13 +1,15 @@
 from typing import Literal, Optional
-
 from pydantic import BaseModel, EmailStr
 
 __all__ = ("UsuarioSchema", "LoginSchema", "PedidoSchema")
+
 
 class UsuarioSchema(BaseModel):
     nome: str
     email: EmailStr
     senha: str
+    admin: bool = False
+    ativo: bool = True
 
     class Config:
         from_attributes = True
@@ -15,7 +17,9 @@ class UsuarioSchema(BaseModel):
             "example": {
                 "nome": "João da Silva",
                 "email": "joao@email.com",
-                "senha": "minhaSenha123"
+                "senha": "minhaSenha123",
+                "admin": False,
+                "ativo": True
             }
         }
 
@@ -25,6 +29,7 @@ class LoginSchema(BaseModel):
     senha: str
 
     class Config:
+        from_attributes = True
         json_schema_extra = {
             "example": {
                 "email": "joao@email.com",
