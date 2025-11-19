@@ -5,16 +5,18 @@ from dependencies import get_db, bcrypt_context, verificar_token
 from schemas import UsuarioSchema, LoginSchema
 from jose import jwt
 from datetime import datetime, timedelta, timezone
-
+from fastapi.security import OAuth2PasswordRequestForm
 from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def criar_token(id_usuario: int, duracao_token = timedelta(minutes = ACCESS_TOKEN_EXPIRE_MINUTES)) -> str:
-    data_expiracao = datetime.now(timezone.utc) + timedelta(
-        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
-    )
+def criar_token(id_usuario: int, duracao_token: timedelta | None = None) -> str:
+    if duracao_token is None:
+        duracao_token = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    data_expiracao = datetime.now(timezone.utc) + duracao_token
+
     dic_info = {
         "sub": str(id_usuario),
         "exp": data_expiracao,
@@ -69,21 +71,42 @@ async def login(login_schema: LoginSchema, db: Session = Depends(get_db)):
 
     if not usuario:
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
-    else:
-        acess_token = criar_token(usuario.id, duracao_token=timedelta(days=7))
-        refresh_token = criar_token(usuario.id)
+
+    access_token = criar_token(usuario.id, duracao_token=timedelta(days=7))
+    refresh_token = criar_token(usuario.id)
 
     return {
         "mensagem": "Login realizado com sucesso",
         "usuario": usuario.email,
-        "token": acess_token,
-        "refresh_token" : refresh_token
+        "token": access_token,
+        "refresh_token": refresh_token,
     }
+
+
+@auth_router.post("/login-form")
+async def login_form(
+    dados_formulario: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    # OAuth2PasswordRequestForm usa "username", mas você está autenticando por email
+    usuario = autenticar_usuario(dados_formulario.username, dados_formulario.password, db)
+
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Email ou senha incorretos")
+
+    access_token = criar_token(usuario.id, duracao_token=timedelta(days=7))
+
+    # 🔴 IMPORTANTE: resposta no formato que o OAuth2PasswordBearer espera
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }   
+
 
 @auth_router.get("/refresh")
 async def use_refresh_token(usuario: Usuario = Depends(verificar_token)):
-    acess_token = criar_token(usuario.id)
+    access_token = criar_token(usuario.id)
     return {
-        "acess_token": acess_token,
-        "token_type": "bearer"
+        "access_token": access_token,
+        "token_type": "bearer",
     }
