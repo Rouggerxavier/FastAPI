@@ -1,7 +1,7 @@
 from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr
 
-__all__ = ("UsuarioSchema", "LoginSchema", "PedidoSchema")
+__all__ = ("UsuarioSchema", "LoginSchema", "PedidoSchema", "ItemPedidoSchema")
 
 
 class UsuarioSchema(BaseModel):
@@ -40,7 +40,7 @@ class LoginSchema(BaseModel):
 
 class PedidoSchema(BaseModel):
     usuario_id: int
-    preco: float
+    preco: float = 0.0
     status: Optional[Literal["pendente", "aberto", "fechado", "cancelado"]] = "pendente"
 
     class Config:
@@ -50,5 +50,23 @@ class PedidoSchema(BaseModel):
                 "usuario_id": 1,
                 "preco": 99.9,
                 "status": "pendente"
+            }
+        }
+
+
+class ItemPedidoSchema(BaseModel):
+    nome_item: str
+    quantidade: int
+    tamanho: Optional[str] = None
+    preco_unitario: float
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "nome_item": "Pizza Calabresa",
+                "quantidade": 2,
+                "tamanho": "Grande",
+                "preco_unitario": 39.9
             }
         }
