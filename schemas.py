@@ -1,7 +1,14 @@
-from typing import Literal, Optional
+from typing import Literal, Optional, List
 from pydantic import BaseModel, EmailStr
 
-__all__ = ("UsuarioSchema", "LoginSchema", "PedidoSchema", "ItemPedidoSchema")
+__all__ = (
+    "UsuarioSchema",
+    "LoginSchema",
+    "PedidoSchema",
+    "ItemPedidoSchema",
+    "RemoverItemSchema",
+    "PedidoCreateSchema",
+)
 
 
 class UsuarioSchema(BaseModel):
@@ -19,7 +26,7 @@ class UsuarioSchema(BaseModel):
                 "email": "joao@email.com",
                 "senha": "minhaSenha123",
                 "admin": False,
-                "ativo": True
+                "ativo": True,
             }
         }
 
@@ -33,14 +40,14 @@ class LoginSchema(BaseModel):
         json_schema_extra = {
             "example": {
                 "email": "joao@email.com",
-                "senha": "minhaSenha123"
+                "senha": "minhaSenha123",
             }
         }
 
 
 class PedidoSchema(BaseModel):
     usuario_id: int
-    preco: float = 0.0
+    preco: float
     status: Optional[Literal["pendente", "aberto", "fechado", "cancelado"]] = "pendente"
 
     class Config:
@@ -49,24 +56,63 @@ class PedidoSchema(BaseModel):
             "example": {
                 "usuario_id": 1,
                 "preco": 99.9,
-                "status": "pendente"
+                "status": "pendente",
             }
         }
 
 
 class ItemPedidoSchema(BaseModel):
-    nome_item: str
     quantidade: int
-    tamanho: Optional[str] = None
+    sabor: str
+    tamanho: str
     preco_unitario: float
 
     class Config:
         from_attributes = True
         json_schema_extra = {
             "example": {
-                "nome_item": "Pizza Calabresa",
                 "quantidade": 2,
+                "sabor": "Calabresa",
                 "tamanho": "Grande",
-                "preco_unitario": 39.9
+                "preco_unitario": 45.5,
+            }
+        }
+
+
+class RemoverItemSchema(BaseModel):
+    sabor: str
+    tamanho: str
+    quantidade: int
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "sabor": "Calabresa",
+                "tamanho": "Grande",
+                "quantidade": 1,
+            }
+        }
+
+
+class PedidoCreateSchema(BaseModel):
+    usuario_id: int
+    status: Optional[Literal["pendente", "aberto", "fechado", "cancelado"]] = "pendente"
+    itens: List[ItemPedidoSchema]
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "usuario_id": 1,
+                "status": "aberto",
+                "itens": [
+                    {
+                        "quantidade": 3,
+                        "sabor": "Calabresa",
+                        "tamanho": "Grande",
+                        "preco_unitario": 50.0,
+                    }
+                ],
             }
         }
