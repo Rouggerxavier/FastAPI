@@ -10,9 +10,6 @@ from schemas import (
     RemoverItemSchema,
 )
 
-# ------------------------------
-# Tabela de preços fixa
-# ------------------------------
 TABELA_PRECOS_PIZZA = {
     ("calabresa", "pequeno"): 30.0,
     ("calabresa", "medio"): 40.0,
@@ -52,10 +49,6 @@ order_router = APIRouter(
     tags=["orders"],
 )
 
-
-# ------------------------------------------------------------------
-# GET /orders/lista – lista simples (id, usuario, preco, status)
-# ------------------------------------------------------------------
 @order_router.get("/lista")
 async def pedidos(
     db: Session = Depends(get_db),
@@ -73,44 +66,36 @@ async def pedidos(
         for pedido in pedidos_cadastrados
     ]
 
-
-# ------------------------------------------------------------------
-# POST /orders/pedido – cria um pedido com 1 item
-# ------------------------------------------------------------------
 @order_router.post("/pedido", status_code=201)
 async def criar_pedido(
     pedido_schema: PedidoCreateSchema,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(verificar_token),
 ):
-    # valida status
+    
     if pedido_schema.status is not None and pedido_schema.status not in STATUS_VALUES:
         raise HTTPException(status_code=400, detail="Status inválido para o pedido")
 
-    # não deixa criar com quantidade 0 ou negativa
     if pedido_schema.quantidade <= 0:
         raise HTTPException(
             status_code=400,
             detail="Quantidade deve ser maior que zero",
         )
 
-    # calcula preço unitário pela tabela fixa
     preco_unitario = calcular_preco_unitario(
         pedido_schema.sabor,
         pedido_schema.tamanho,
     )
     subtotal = preco_unitario * pedido_schema.quantidade
 
-    # cria pedido já com o preço desse item
     novo_pedido = Pedido(
         usuario_id=pedido_schema.usuario_id,
         preco=subtotal,
         status=pedido_schema.status,
     )
     db.add(novo_pedido)
-    db.flush()  # garante novo_pedido.id
+    db.flush()
 
-    # cria item vinculado ao pedido
     item = ItemPedido(
         pedido_id=novo_pedido.id,
         sabor=pedido_schema.sabor,
@@ -142,10 +127,6 @@ async def criar_pedido(
         ],
     }
 
-
-# ------------------------------------------------------------------
-# POST /orders/pedido/cancelar/{id_pedido}
-# ------------------------------------------------------------------
 @order_router.post("/pedido/cancelar/{id_pedido}")
 async def cancelar_pedido(
     id_pedido: int,
@@ -174,16 +155,12 @@ async def cancelar_pedido(
         },
     }
 
-
-# ------------------------------------------------------------------
-# GET /orders/listar – lista detalhada (admin somente)
-# ------------------------------------------------------------------
 @order_router.get("/listar")
 async def listar_pedidos(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(verificar_token),
 ):
-    # Apenas admins podem acessar
+    
     if not usuario.admin:
         raise HTTPException(
             status_code=403,
@@ -220,10 +197,6 @@ async def listar_pedidos(
 
     return resposta
 
-
-# ------------------------------------------------------------------
-# POST /orders/pedido/adicionar-item/{id_pedido}
-# ------------------------------------------------------------------
 @order_router.post("/pedido/adicionar-item/{id_pedido}")
 async def adicionar_item_pedido(
     id_pedido: int,
@@ -235,11 +208,9 @@ async def adicionar_item_pedido(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
 
-    # Permissão: admin ou dono do pedido
     if not usuario.admin and usuario.id != pedido.usuario_id:
         raise HTTPException(status_code=403, detail="Você não tem permissão para alterar esse pedido")
-
-    # bloqueia quantidade 0/negativa
+    
     if item_pedido_schema.quantidade <= 0:
         raise HTTPException(
             status_code=400,
@@ -282,9 +253,6 @@ async def adicionar_item_pedido(
     }
 
 
-# ------------------------------------------------------------------
-# POST /orders/pedido/remover-item/{id_pedido}
-# ------------------------------------------------------------------
 @order_router.post("/pedido/remover-item/{id_pedido}")
 async def remover_item_pedido(
     id_pedido: int,
@@ -318,7 +286,6 @@ async def remover_item_pedido(
             detail="Item não encontrado nesse pedido",
         )
 
-    # calcula quanto vai remover
     if remover_item.quantidade >= item.quantidade:
         valor_removido = item.quantidade * item.preco_unitario
         quantidade_removida = item.quantidade
@@ -360,16 +327,12 @@ async def remover_item_pedido(
     }
 
 
-# ------------------------------------------------------------------
-# POST /orders/pedido/finalizar/{id_pedido} – admin fecha o pedido
-# ------------------------------------------------------------------
 @order_router.post("/pedido/finalizar/{id_pedido}")
 async def finalizar_pedido(
     id_pedido: int,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(verificar_token),
 ):
-    # Só admin pode finalizar pedidos
     if not usuario.admin:
         raise HTTPException(
             status_code=403,
@@ -387,8 +350,7 @@ async def finalizar_pedido(
             status_code=400,
             detail=f"Não é possível finalizar um pedido com status '{status_atual}'",
         )
-
-    # marca como fechado
+    
     pedido.status = "fechado"
     db.commit()
     db.refresh(pedido)
@@ -418,10 +380,6 @@ async def finalizar_pedido(
         },
     }
 
-
-# ------------------------------------------------------------------
-# GET /orders/pedido/{id_pedido} – detalhar 1 pedido
-# ------------------------------------------------------------------
 @order_router.get("/pedido/{id_pedido}")
 async def obter_pedido(
     id_pedido: int,
@@ -432,7 +390,6 @@ async def obter_pedido(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
 
-    # Permissão: admin OU dono do pedido
     if not usuario.admin and usuario.id != pedido.usuario_id:
         raise HTTPException(
             status_code=403,
