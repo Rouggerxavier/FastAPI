@@ -5,9 +5,10 @@ __all__ = (
     "UsuarioSchema",
     "LoginSchema",
     "PedidoSchema",
-    "ItemPedidoSchema",
-    "RemoverItemSchema",
     "PedidoCreateSchema",
+    "ItemPedidoSchema",
+    "ItemPedidoCreateSchema",
+    "RemoverItemSchema",
 )
 
 
@@ -45,38 +46,64 @@ class LoginSchema(BaseModel):
         }
 
 
-class PedidoSchema(BaseModel):
+class ItemPedidoCreateSchema(BaseModel):
+    sabor: str
+    tamanho: str
+    quantidade: int
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "sabor": "calabresa",
+                "tamanho": "grande",
+                "quantidade": 2
+            }
+        }
+
+
+class ItemPedidoSchema(BaseModel):
+    id: int
+    pedido_id: int
+    sabor: str
+    tamanho: str
+    quantidade: int
+    preco_unitario: float
+    subtotal: float
+
+    class Config:
+        from_attributes = True
+
+
+class PedidoCreateSchema(BaseModel):
     usuario_id: int
-    preco: float
-    status: Optional[Literal["pendente", "aberto", "fechado", "cancelado"]] = "pendente"
+    status: Optional[Literal["pendente", "aberto", "fechado", "cancelado"]] = "aberto"
+    sabor: str
+    tamanho: str
+    quantidade: int
 
     class Config:
         from_attributes = True
         json_schema_extra = {
             "example": {
                 "usuario_id": 1,
-                "preco": 99.9,
-                "status": "pendente",
+                "status": "aberto",
+                "sabor": "calabresa",
+                "tamanho": "grande",
+                "quantidade": 2
             }
         }
 
 
-class ItemPedidoSchema(BaseModel):
-    quantidade: int
-    sabor: str
-    tamanho: str
-    preco_unitario: float
+class PedidoSchema(BaseModel):
+    id: int
+    usuario_id: int
+    preco_total: float
+    status: str
+    itens: List[ItemPedidoSchema]
 
     class Config:
         from_attributes = True
-        json_schema_extra = {
-            "example": {
-                "quantidade": 2,
-                "sabor": "Calabresa",
-                "tamanho": "Grande",
-                "preco_unitario": 45.5,
-            }
-        }
 
 
 class RemoverItemSchema(BaseModel):
@@ -88,31 +115,8 @@ class RemoverItemSchema(BaseModel):
         from_attributes = True
         json_schema_extra = {
             "example": {
-                "sabor": "Calabresa",
-                "tamanho": "Grande",
+                "sabor": "calabresa",
+                "tamanho": "grande",
                 "quantidade": 1,
-            }
-        }
-
-
-class PedidoCreateSchema(BaseModel):
-    usuario_id: int
-    status: Optional[Literal["pendente", "aberto", "fechado", "cancelado"]] = "pendente"
-    itens: List[ItemPedidoSchema]
-
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
-            "example": {
-                "usuario_id": 1,
-                "status": "aberto",
-                "itens": [
-                    {
-                        "quantidade": 3,
-                        "sabor": "Calabresa",
-                        "tamanho": "Grande",
-                        "preco_unitario": 50.0,
-                    }
-                ],
             }
         }

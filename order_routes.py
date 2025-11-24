@@ -4,11 +4,48 @@ from sqlalchemy.orm import Session
 from dependencies import get_db, verificar_token
 from models import Pedido, STATUS_VALUES, Usuario, ItemPedido
 from schemas import (
-    PedidoSchema,
-    ItemPedidoSchema,
-    RemoverItemSchema,
     PedidoCreateSchema,
+    PedidoSchema,
+    ItemPedidoCreateSchema,
+    RemoverItemSchema,
 )
+
+# ------------------------------
+# Tabela de preços fixa
+# ------------------------------
+TABELA_PRECOS_PIZZA = {
+    ("calabresa", "pequeno"): 30.0,
+    ("calabresa", "medio"): 40.0,
+    ("calabresa", "grande"): 50.0,
+
+    ("marguerita", "pequeno"): 32.0,
+    ("marguerita", "medio"): 42.0,
+    ("marguerita", "grande"): 52.0,
+
+    ("frango catupiry", "pequeno"): 35.0,
+    ("frango catupiry", "medio"): 45.0,
+    ("frango catupiry", "grande"): 55.0,
+}
+
+
+def _status_to_str(status):
+    if hasattr(status, "value"):
+        return status.value
+    return status
+
+
+def calcular_preco_unitario(sabor: str, tamanho: str) -> float:
+    sabor_key = sabor.strip().lower()
+    tamanho_key = tamanho.strip().lower()
+
+    preco = TABELA_PRECOS_PIZZA.get((sabor_key, tamanho_key))
+    if preco is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Combinação de sabor e tamanho não encontrada na tabela de preços",
+        )
+    return preco
+
 
 order_router = APIRouter(
     prefix="/orders",
@@ -16,6 +53,9 @@ order_router = APIRouter(
 )
 
 
+# ------------------------------------------------------------------
+# GET /orders/lista – lista simples (id, usuario, preco, status)
+# ------------------------------------------------------------------
 @order_router.get("/lista")
 async def pedidos(
     db: Session = Depends(get_db),
@@ -28,12 +68,15 @@ async def pedidos(
             "id": pedido.id,
             "usuario_id": pedido.usuario_id,
             "preco": pedido.preco,
-            "status": pedido.status.value if hasattr(pedido.status, "value") else pedido.status,
+            "status": _status_to_str(pedido.status),
         }
         for pedido in pedidos_cadastrados
     ]
 
 
+# ------------------------------------------------------------------
+# POST /orders/pedido – cria um pedido com 1 item
+# ------------------------------------------------------------------
 @order_router.post("/pedido", status_code=201)
 async def criar_pedido(
     pedido_schema: PedidoCreateSchema,
@@ -44,53 +87,65 @@ async def criar_pedido(
     if pedido_schema.status is not None and pedido_schema.status not in STATUS_VALUES:
         raise HTTPException(status_code=400, detail="Status inválido para o pedido")
 
-    # regra de permissão: admin pode criar pra qualquer usuario_id,
-    # usuário normal só cria pedido pra ele mesmo
-    if not usuario.admin and usuario.id != pedido_schema.usuario_id:
+    # não deixa criar com quantidade 0 ou negativa
+    if pedido_schema.quantidade <= 0:
         raise HTTPException(
-            status_code=403,
-            detail="Você não tem permissão para criar pedido para outro usuário",
+            status_code=400,
+            detail="Quantidade deve ser maior que zero",
         )
 
-    # calcula o preço total com base nos itens enviados
-    preco_total = 0.0
-    for item in pedido_schema.itens:
-        preco_total += item.quantidade * item.preco_unitario
+    # calcula preço unitário pela tabela fixa
+    preco_unitario = calcular_preco_unitario(
+        pedido_schema.sabor,
+        pedido_schema.tamanho,
+    )
+    subtotal = preco_unitario * pedido_schema.quantidade
 
-    # cria o pedido já com o preço calculado
+    # cria pedido já com o preço desse item
     novo_pedido = Pedido(
         usuario_id=pedido_schema.usuario_id,
-        preco=preco_total,
+        preco=subtotal,
         status=pedido_schema.status,
     )
     db.add(novo_pedido)
-    db.flush()  # garante que novo_pedido.id existe
+    db.flush()  # garante novo_pedido.id
 
-    # cria os itens vinculados ao pedido
-    for item in pedido_schema.itens:
-        item_pedido = ItemPedido(
-            pedido_id=novo_pedido.id,
-            sabor=item.sabor,
-            tamanho=item.tamanho,
-            quantidade=item.quantidade,
-            preco_unitario=item.preco_unitario,
-        )
-        db.add(item_pedido)
+    # cria item vinculado ao pedido
+    item = ItemPedido(
+        pedido_id=novo_pedido.id,
+        sabor=pedido_schema.sabor,
+        tamanho=pedido_schema.tamanho,
+        quantidade=pedido_schema.quantidade,
+        preco_unitario=preco_unitario,
+    )
+    db.add(item)
+    db.flush()
 
     db.commit()
     db.refresh(novo_pedido)
+    db.refresh(item)
 
     return {
-        "mensagem": f"Pedido criado com sucesso. Id do pedido: {novo_pedido.id}",
-        "pedido": {
-            "id": novo_pedido.id,
-            "usuario_id": novo_pedido.usuario_id,
-            "preco": novo_pedido.preco,
-            "status": novo_pedido.status.value if hasattr(novo_pedido.status, "value") else novo_pedido.status,
-        },
+        "id": novo_pedido.id,
+        "usuario_id": novo_pedido.usuario_id,
+        "preco_total": novo_pedido.preco,
+        "status": _status_to_str(novo_pedido.status),
+        "itens": [
+            {
+                "id": item.id,
+                "sabor": item.sabor,
+                "tamanho": item.tamanho,
+                "quantidade": item.quantidade,
+                "preco_unitario": item.preco_unitario,
+                "subtotal": subtotal,
+            }
+        ],
     }
 
 
+# ------------------------------------------------------------------
+# POST /orders/pedido/cancelar/{id_pedido}
+# ------------------------------------------------------------------
 @order_router.post("/pedido/cancelar/{id_pedido}")
 async def cancelar_pedido(
     id_pedido: int,
@@ -115,36 +170,64 @@ async def cancelar_pedido(
             "id": pedido.id,
             "usuario_id": pedido.usuario_id,
             "preco": pedido.preco,
-            "status": pedido.status.value if hasattr(pedido.status, "value") else pedido.status,
+            "status": _status_to_str(pedido.status),
         },
     }
 
 
+# ------------------------------------------------------------------
+# GET /orders/listar – lista detalhada (admin somente)
+# ------------------------------------------------------------------
 @order_router.get("/listar")
 async def listar_pedidos(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(verificar_token),
 ):
+    # Apenas admins podem acessar
     if not usuario.admin:
-        raise HTTPException(status_code=403, detail="Você não tem permissão para listar pedidos")
+        raise HTTPException(
+            status_code=403,
+            detail="Você não tem permissão para listar pedidos"
+        )
 
     pedidos = db.query(Pedido).all()
 
-    return [
-        {
-            "id": p.id,
-            "usuario_id": p.usuario_id,
-            "preco": p.preco,
-            "status": p.status.value if hasattr(p.status, "value") else p.status,
-        }
-        for p in pedidos
-    ]
+    resposta = []
+    for p in pedidos:
+        itens_formatados = []
+        for item in p.itens:
+            subtotal = item.quantidade * item.preco_unitario
+            itens_formatados.append(
+                {
+                    "id": item.id,
+                    "sabor": item.sabor,
+                    "tamanho": item.tamanho,
+                    "quantidade": item.quantidade,
+                    "preco_unitario": item.preco_unitario,
+                    "subtotal": subtotal,
+                }
+            )
+
+        resposta.append(
+            {
+                "id": p.id,
+                "usuario_id": p.usuario_id,
+                "preco_total": p.preco,
+                "status": _status_to_str(p.status),
+                "itens": itens_formatados,
+            }
+        )
+
+    return resposta
 
 
+# ------------------------------------------------------------------
+# POST /orders/pedido/adicionar-item/{id_pedido}
+# ------------------------------------------------------------------
 @order_router.post("/pedido/adicionar-item/{id_pedido}")
 async def adicionar_item_pedido(
     id_pedido: int,
-    item_pedido_schema: ItemPedidoSchema,
+    item_pedido_schema: ItemPedidoCreateSchema,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(verificar_token),
 ):
@@ -152,18 +235,30 @@ async def adicionar_item_pedido(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
 
+    # Permissão: admin ou dono do pedido
     if not usuario.admin and usuario.id != pedido.usuario_id:
         raise HTTPException(status_code=403, detail="Você não tem permissão para alterar esse pedido")
+
+    # bloqueia quantidade 0/negativa
+    if item_pedido_schema.quantidade <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Quantidade deve ser maior que zero",
+        )
+
+    preco_unitario = calcular_preco_unitario(
+        item_pedido_schema.sabor,
+        item_pedido_schema.tamanho,
+    )
 
     item_pedido = ItemPedido(
         sabor=item_pedido_schema.sabor,
         tamanho=item_pedido_schema.tamanho,
         quantidade=item_pedido_schema.quantidade,
-        preco_unitario=item_pedido_schema.preco_unitario,
-        pedido=pedido,  # liga na relação
+        preco_unitario=preco_unitario,
+        pedido=pedido,
     )
 
-    # soma no preço atual em vez de recalcular tudo
     valor_novo_item = item_pedido.quantidade * item_pedido.preco_unitario
     pedido.preco += valor_novo_item
 
@@ -181,11 +276,15 @@ async def adicionar_item_pedido(
             "tamanho": item_pedido.tamanho,
             "quantidade": item_pedido.quantidade,
             "preco_unitario": item_pedido.preco_unitario,
+            "subtotal": valor_novo_item,
         },
         "preco_pedido": pedido.preco,
     }
 
 
+# ------------------------------------------------------------------
+# POST /orders/pedido/remover-item/{id_pedido}
+# ------------------------------------------------------------------
 @order_router.post("/pedido/remover-item/{id_pedido}")
 async def remover_item_pedido(
     id_pedido: int,
@@ -193,19 +292,16 @@ async def remover_item_pedido(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(verificar_token),
 ):
-    # 1) Busca o pedido
     pedido = db.query(Pedido).filter(Pedido.id == id_pedido).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
 
-    # 2) Verifica permissão (admin ou dono do pedido)
     if not usuario.admin and usuario.id != pedido.usuario_id:
         raise HTTPException(
             status_code=403,
             detail="Você não tem permissão para alterar esse pedido",
         )
 
-    # 3) Busca o item específico (pelo sabor + tamanho)
     item = (
         db.query(ItemPedido)
         .filter(
@@ -222,63 +318,145 @@ async def remover_item_pedido(
             detail="Item não encontrado nesse pedido",
         )
 
-    # 4) Calcula quanto vai ser removido de fato
+    # calcula quanto vai remover
     if remover_item.quantidade >= item.quantidade:
-        # remove tudo desse item
-        quantidade_removida = item.quantidade
         valor_removido = item.quantidade * item.preco_unitario
+        quantidade_removida = item.quantidade
+        quantidade_restante = 0
         db.delete(item)
     else:
-        # remove só uma parte
-        quantidade_removida = remover_item.quantidade
         valor_removido = remover_item.quantidade * item.preco_unitario
         item.quantidade -= remover_item.quantidade
+        quantidade_removida = remover_item.quantidade
+        quantidade_restante = item.quantidade
 
-    # 5) Atualiza preço do pedido
     novo_preco = pedido.preco - valor_removido
     if novo_preco < 0:
-        novo_preco = 0
+        novo_preco = 0.0
     pedido.preco = novo_preco
 
     db.commit()
     db.refresh(pedido)
 
-    # 6) Busca itens restantes do pedido
-    itens_restantes = (
-        db.query(ItemPedido)
-        .filter(ItemPedido.pedido_id == id_pedido)
-        .all()
-    )
-
-    itens_restantes_out = [
-        {
-            "id": it.id,
-            "sabor": it.sabor,
-            "tamanho": it.tamanho,
-            "quantidade": it.quantidade,
-            "preco_unitario": it.preco_unitario,
-            "subtotal": it.quantidade * it.preco_unitario,
-        }
-        for it in itens_restantes
-    ]
-
-    # 7) Monta resposta com "o que saiu" e "como ficou"
-    item_removido_out = {
-        "sabor": remover_item.sabor,
-        "tamanho": remover_item.tamanho,
-        "quantidade_removida": quantidade_removida,
-        "valor_removido": valor_removido,
-    }
-
     return {
         "mensagem": "Item removido com sucesso",
-        "item_removido": item_removido_out,
+        "item_removido": {
+            "sabor": remover_item.sabor,
+            "tamanho": remover_item.tamanho,
+            "quantidade_removida": quantidade_removida,
+            "valor_removido": valor_removido,
+        },
         "pedido_atualizado": {
             "id": pedido.id,
             "usuario_id": pedido.usuario_id,
             "preco": pedido.preco,
-            "status": pedido.status.value if hasattr(pedido.status, "value") else pedido.status,
-            "itens": itens_restantes_out,
+            "status": _status_to_str(pedido.status),
+            "item_restante": {
+                "sabor": remover_item.sabor,
+                "tamanho": remover_item.tamanho,
+                "quantidade_restante": quantidade_restante,
+            },
         },
     }
 
+
+# ------------------------------------------------------------------
+# POST /orders/pedido/finalizar/{id_pedido} – admin fecha o pedido
+# ------------------------------------------------------------------
+@order_router.post("/pedido/finalizar/{id_pedido}")
+async def finalizar_pedido(
+    id_pedido: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(verificar_token),
+):
+    # Só admin pode finalizar pedidos
+    if not usuario.admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Você não tem permissão para finalizar pedidos",
+        )
+
+    pedido = db.query(Pedido).filter(Pedido.id == id_pedido).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+
+    status_atual = _status_to_str(pedido.status).lower()
+
+    if status_atual in ("fechado", "cancelado"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Não é possível finalizar um pedido com status '{status_atual}'",
+        )
+
+    # marca como fechado
+    pedido.status = "fechado"
+    db.commit()
+    db.refresh(pedido)
+
+    itens_formatados = []
+    for item in pedido.itens:
+        subtotal = item.quantidade * item.preco_unitario
+        itens_formatados.append(
+            {
+                "id": item.id,
+                "sabor": item.sabor,
+                "tamanho": item.tamanho,
+                "quantidade": item.quantidade,
+                "preco_unitario": item.preco_unitario,
+                "subtotal": subtotal,
+            }
+        )
+
+    return {
+        "mensagem": f"Pedido {pedido.id} finalizado com sucesso",
+        "pedido": {
+            "id": pedido.id,
+            "usuario_id": pedido.usuario_id,
+            "preco_total": pedido.preco,
+            "status": _status_to_str(pedido.status),
+            "itens": itens_formatados,
+        },
+    }
+
+
+# ------------------------------------------------------------------
+# GET /orders/pedido/{id_pedido} – detalhar 1 pedido
+# ------------------------------------------------------------------
+@order_router.get("/pedido/{id_pedido}")
+async def obter_pedido(
+    id_pedido: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(verificar_token),
+):
+    pedido = db.query(Pedido).filter(Pedido.id == id_pedido).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+
+    # Permissão: admin OU dono do pedido
+    if not usuario.admin and usuario.id != pedido.usuario_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Você não tem permissão para visualizar esse pedido",
+        )
+
+    itens_formatados = []
+    for item in pedido.itens:
+        subtotal = item.quantidade * item.preco_unitario
+        itens_formatados.append(
+            {
+                "id": item.id,
+                "sabor": item.sabor,
+                "tamanho": item.tamanho,
+                "quantidade": item.quantidade,
+                "preco_unitario": item.preco_unitario,
+                "subtotal": subtotal,
+            }
+        )
+
+    return {
+        "id": pedido.id,
+        "usuario_id": pedido.usuario_id,
+        "preco_total": pedido.preco,
+        "status": _status_to_str(pedido.status),
+        "itens": itens_formatados,
+    }
